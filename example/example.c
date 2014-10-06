@@ -257,6 +257,20 @@ int main()
 		fonsSetBlur(fs, 0);
 		fonsDrawText(fs, dx,dy,"DROP THAT SHADOW",NULL);
 
+		dy += 90.0f;
+
+		fonsSetSize(fs, 58.0f);
+		fonsSetFont(fs, fontBold);
+		fonsSetColor(fs, white);
+		fonsSetSpacing(fs, 0.0f);
+		fonsSetBlur(fs, 2.0f);
+		fonsSetBlurType(fs, FONS_EFFECT_GROW);
+		fonsDrawText(fs, dx,dy,"Outlining is fun",NULL);
+
+		fonsSetColor(fs, black);
+		fonsSetBlur(fs, 0);
+		fonsDrawText(fs, dx,dy,"Outlining is fun",NULL);
+
 		if (debug)
 			fonsDrawDebug(fs, 800.0, 50.0);
 

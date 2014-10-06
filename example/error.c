@@ -29,6 +29,8 @@
 
 FONScontext* fs = NULL;
 int size = 90;
+float scale = 1.0f;
+int alphaTest = 1;
 
 void dash(float dx, float dy)
 {
@@ -86,6 +88,17 @@ static void key(GLFWwindow* window, int key, int scancode, int action, int mods)
 	if (key == 264 && action == GLFW_PRESS) {
 		size -= 10;
 		if (size < 20) size = 20;
+	}
+
+	if (key == 263 && action == GLFW_PRESS) {
+		scale /= 1.1f;
+	}
+	if (key == 262 && action == GLFW_PRESS) {
+		scale *= 1.1f;
+	}
+
+	if (key == GLFW_KEY_A && action == GLFW_PRESS) {
+		alphaTest = !alphaTest;
 	}
 }
 
@@ -204,6 +217,12 @@ int main()
 		fonsSetSize(fs, size);
 		fonsSetFont(fs, fontNormal);
 		fonsVertMetrics(fs, NULL, NULL, &lh);
+
+		glPushMatrix();
+		glTranslatef(sx, dy, 0.0f);
+		glScalef(scale, scale, scale);
+		glTranslatef(-sx, -dy, 0.0f);
+
 		dx = sx;
 		dy += lh;
 		dash(dx,dy);
@@ -223,14 +242,40 @@ int main()
 		fonsSetColor(fs, white);
 		dx = fonsDrawText(fs, dx,dy,"fox ",NULL);
 
+		if (alphaTest) {
+			glAlphaFunc(GL_GREATER, 0.5f);
+			glEnable(GL_ALPHA_TEST);
+			glDisable(GL_BLEND);
+		}
+
+		fonsSetSize(fs, size);
+
+		fonsSetBlur(fs, 0.0f);
+		fonsDrawText(fs, sx,dy+lh*1,"The quick brown fox",NULL);
+
+		fonsSetBlur(fs, 3.0f);
+		fonsSetBlurType(fs, FONS_EFFECT_DISTANCE_FIELD);
+		fonsDrawText(fs, sx,dy+lh*2,"The quick brown fox",NULL);
+
+		fonsSetBlur(fs, 1.0f);
+		fonsSetBlurType(fs, FONS_EFFECT_DISTANCE_FIELD_FAST);
+		fonsDrawText(fs, sx,dy+lh*3,"The quick brown fox",NULL);
+
+		if (alphaTest) {
+			glDisable(GL_ALPHA_TEST);
+			glEnable(GL_BLEND);
+		}
+		glPopMatrix();
+
 		fonsSetSize(fs, 14);
 		fonsSetFont(fs, fontNormal);
 		fonsSetColor(fs, white);
-		fonsDrawText(fs, 20, height-20,"Press UP / DOWN keys to change font size and to trigger atlas full callback, R to reset atlas, E to expand atlas.",NULL);
+		fonsDrawText(fs, 20, height-40,"Press UP / DOWN keys to change font size and to trigger atlas full callback, R to reset atlas, E to expand atlas.",NULL);
+		fonsDrawText(fs, 20, height-20,"Press LEFT / RIGHT keys to change zoom level and A to toggle alpha testing.",NULL);
 
 		fonsGetAtlasSize(fs, &atlasw, &atlash);
 		snprintf(msg, sizeof(msg), "Atlas: %d × %d", atlasw, atlash);
-		fonsDrawText(fs, 20, height-50, msg, NULL);
+		fonsDrawText(fs, 20, height-70, msg, NULL);
 
 		fonsDrawDebug(fs, width - atlasw - 20, 20.0);
 
