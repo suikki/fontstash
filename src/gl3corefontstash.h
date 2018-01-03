@@ -33,7 +33,8 @@ FONS_DEF unsigned int glfonsRGBA(unsigned char r, unsigned char g, unsigned char
 
 #endif // GL3COREFONTSTASH_H
 
-#ifdef GLFONTSTASH_IMPLEMENTATION
+#if defined(GLFONTSTASH_IMPLEMENTATION) || defined(GLFONTSTASH_IMPLEMENTATION_ES2)
+
 
 #ifndef GLFONS_VERTEX_ATTRIB
 #	define GLFONS_VERTEX_ATTRIB 0
@@ -50,10 +51,10 @@ FONS_DEF unsigned int glfonsRGBA(unsigned char r, unsigned char g, unsigned char
 struct GLFONScontext {
 	GLuint tex;
 	int width, height;
-	GLuint vertexArray;
 	GLuint vertexBuffer;
 	GLuint tcoordBuffer;
 	GLuint colorBuffer;
+	GLuint vertexArray; // Not used if GLFONTSTASH_IMPLEMENTATION_ES2 is defined
 };
 typedef struct GLFONScontext GLFONScontext;
 
@@ -70,10 +71,13 @@ static int glfons__renderCreate(void* userPtr, int width, int height)
 	glGenTextures(1, &gl->tex);
 	if (!gl->tex) return 0;
 
+// Only use VAO if they are supported. This way the same implementation works on OpenGL ES2 too.
+#ifndef GLFONTSTASH_IMPLEMENTATION_ES2
 	if (!gl->vertexArray) glGenVertexArrays(1, &gl->vertexArray);
 	if (!gl->vertexArray) return 0;
 
 	glBindVertexArray(gl->vertexArray);
+#endif
 
 	if (!gl->vertexBuffer) glGenBuffers(1, &gl->vertexBuffer);
 	if (!gl->vertexBuffer) return 0;
@@ -87,11 +91,18 @@ static int glfons__renderCreate(void* userPtr, int width, int height)
 	gl->width = width;
 	gl->height = height;
 	glBindTexture(GL_TEXTURE_2D, gl->tex);
+
+#ifdef GLFONTSTASH_IMPLEMENTATION_ES2
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, gl->width, gl->height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+#else
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, gl->width, gl->height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    static GLint swizzleRgbaParams[4] = {GL_ONE, GL_ONE, GL_ONE, GL_RED};
-    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleRgbaParams);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	static GLint swizzleRgbaParams[4] = {GL_ONE, GL_ONE, GL_ONE, GL_RED};
+	glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleRgbaParams);
+#endif
 
 	return 1;
 }
@@ -105,6 +116,20 @@ static int glfons__renderResize(void* userPtr, int width, int height)
 static void glfons__renderUpdate(void* userPtr, int* rect, const unsigned char* data)
 {
 	GLFONScontext* gl = (GLFONScontext*)userPtr;
+
+#ifdef GLFONTSTASH_IMPLEMENTATION_ES2
+	GLint alignment;
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+	glBindTexture(GL_TEXTURE_2D, gl->tex);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	// TODO: for now the whole texture is updated every time. Profile how bad is this.
+	// as ES2 doesn't seem to support GL_UNPACK_ROW_LENGTH the only other option is to make a temp copy of the updated
+	// portion with contiguous memory which is probably even worse.
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, gl->width, gl->height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, data);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+
+#else
+	// OpenGl desktop/es3 should use this version:
 	int w = rect[2] - rect[0];
 	int h = rect[3] - rect[1];
 
@@ -131,17 +156,23 @@ static void glfons__renderUpdate(void* userPtr, int* rect, const unsigned char* 
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, rowLength);
 	glPixelStorei(GL_UNPACK_SKIP_PIXELS, skipPixels);
 	glPixelStorei(GL_UNPACK_SKIP_ROWS, skipRows);
+#endif
+
 }
 
 static void glfons__renderDraw(void* userPtr, const float* verts, const float* tcoords, const unsigned int* colors, int nverts)
 {
 	GLFONScontext* gl = (GLFONScontext*)userPtr;
+#ifdef GLFONTSTASH_IMPLEMENTATION_ES2
+	if (gl->tex == 0) return;
+#else
 	if (gl->tex == 0 || gl->vertexArray == 0) return;
+
+	glBindVertexArray(gl->vertexArray);
+#endif
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, gl->tex);
-
-	glBindVertexArray(gl->vertexArray);
 
 	glEnableVertexAttribArray(GLFONS_VERTEX_ATTRIB);
 	glBindBuffer(GL_ARRAY_BUFFER, gl->vertexBuffer);
@@ -156,7 +187,7 @@ static void glfons__renderDraw(void* userPtr, const float* verts, const float* t
 	glEnableVertexAttribArray(GLFONS_COLOR_ATTRIB);
 	glBindBuffer(GL_ARRAY_BUFFER, gl->colorBuffer);
 	glBufferData(GL_ARRAY_BUFFER, nverts * sizeof(unsigned int), colors, GL_DYNAMIC_DRAW);
-	glVertexAttribPointer(GLFONS_COLOR_ATTRIB, 4, GL_UNSIGNED_BYTE, GL_FALSE, 0, NULL);
+	glVertexAttribPointer(GLFONS_COLOR_ATTRIB, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, NULL);
 
 	glDrawArrays(GL_TRIANGLES, 0, nverts);
 
@@ -164,7 +195,9 @@ static void glfons__renderDraw(void* userPtr, const float* verts, const float* t
 	glDisableVertexAttribArray(GLFONS_TCOORD_ATTRIB);
 	glDisableVertexAttribArray(GLFONS_COLOR_ATTRIB);
 
+#ifndef GLFONTSTASH_IMPLEMENTATION_ES2
 	glBindVertexArray(0);
+#endif
 }
 
 static void glfons__renderDelete(void* userPtr)
@@ -175,7 +208,9 @@ static void glfons__renderDelete(void* userPtr)
 		gl->tex = 0;
 	}
 
+#ifndef GLFONTSTASH_IMPLEMENTATION_ES2
 	glBindVertexArray(0);
+#endif
 
 	if (gl->vertexBuffer != 0) {
 		glDeleteBuffers(1, &gl->vertexBuffer);
@@ -192,10 +227,12 @@ static void glfons__renderDelete(void* userPtr)
 		gl->colorBuffer = 0;
 	}
 
+#ifndef GLFONTSTASH_IMPLEMENTATION_ES2
 	if (gl->vertexArray != 0) {
 		glDeleteVertexArrays(1, &gl->vertexArray);
 		gl->vertexArray = 0;
 	}
+#endif
 
 	free(gl);
 }
